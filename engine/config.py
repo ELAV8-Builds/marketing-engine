@@ -60,6 +60,11 @@ GOOGLE_ADS_CUSTOMER_ID = env("GOOGLE_ADS_CUSTOMER_ID")
 TIKTOK_ACCESS_TOKEN = env("TIKTOK_ACCESS_TOKEN")
 TIKTOK_ADVERTISER_ID = env("TIKTOK_ADVERTISER_ID")
 
+# ── Logo Generation ──────────────────────────────────────
+RECRAFT_API_KEY = env("RECRAFT_API_KEY")
+IDEOGRAM_API_KEY = env("IDEOGRAM_API_KEY")
+OPENAI_API_KEY = env("OPENAI_API_KEY")
+
 # ── Landing Pages ────────────────────────────────────────
 VERCEL_TOKEN = env("VERCEL_TOKEN")
 VERCEL_TEAM_ID = env("VERCEL_TEAM_ID")

@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { generateVideo } from '@/lib/api';
+import { useState, useEffect } from 'react';
+import { generateVideo, fetchContent, ContentItem } from '@/lib/api';
 
 const VOICES = [
   { id: 'en-US-AriaNeural', name: 'Aria (US Female)', type: 'edge-tts' },
@@ -31,6 +31,24 @@ export default function VideoPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<VideoResult | null>(null);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState<'create' | 'gallery'>('create');
+  const [videos, setVideos] = useState<ContentItem[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(true);
+
+  useEffect(() => {
+    loadVideos();
+  }, []);
+
+  const loadVideos = async () => {
+    try {
+      const data = await fetchContent('', 'youtube', 50);
+      setVideos(data.content.filter(c => c.content_type === 'video_short' || c.media_url));
+    } catch {
+      // Engine offline
+    } finally {
+      setGalleryLoading(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!topic) return;
@@ -47,6 +65,7 @@ export default function VideoPage() {
         upload_to: uploadYouTube ? ['youtube'] : [],
       });
       setResult(data as VideoResult);
+      loadVideos(); // Refresh gallery
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed');
     } finally {
@@ -55,196 +74,293 @@ export default function VideoPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Video Generator</h1>
-        <p className="text-zinc-400 mt-1">Create faceless videos with AI script + stock footage or avatar</p>
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Video Studio</h1>
+          <p className="text-sm text-zinc-500 mt-1">Create faceless videos with AI — stock footage or avatar mode</p>
+        </div>
+
+        {/* Tab switcher */}
+        <div className="glass rounded-xl p-1 flex gap-1">
+          <button
+            onClick={() => setTab('create')}
+            className={`px-4 py-2 rounded-lg text-xs font-medium transition-all ${
+              tab === 'create' ? 'bg-accent-purple/15 text-white' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Create New
+          </button>
+          <button
+            onClick={() => setTab('gallery')}
+            className={`px-4 py-2 rounded-lg text-xs font-medium transition-all ${
+              tab === 'gallery' ? 'bg-accent-purple/15 text-white' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Gallery ({videos.length})
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Form */}
-        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">Topic *</label>
-            <input
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="5 Morning Habits That Changed My Life"
-              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+      {tab === 'create' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Form */}
+          <div className="glass rounded-2xl p-6 space-y-5">
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Product Name</label>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Topic *</label>
               <input
                 type="text"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                placeholder="Optional product mention"
-                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="5 Morning Habits That Changed My Life"
+                className="w-full px-4 py-2.5 bg-surface-3 border border-white/[0.06] rounded-xl text-white placeholder-zinc-600 text-sm glow-ring"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Product URL</label>
-              <input
-                type="text"
-                value={productUrl}
-                onChange={(e) => setProductUrl(e.target.value)}
-                placeholder="https://..."
-                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500"
-              />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Video Mode</label>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value)}
-                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
-              >
-                <option value="stock">Stock Footage (Pexels)</option>
-                <option value="avatar">AI Avatar (HeyGen)</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Product Name</label>
+                <input
+                  type="text"
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                  placeholder="Optional product mention"
+                  className="w-full px-4 py-2.5 bg-surface-3 border border-white/[0.06] rounded-xl text-white placeholder-zinc-600 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Product URL</label>
+                <input
+                  type="text"
+                  value={productUrl}
+                  onChange={(e) => setProductUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-4 py-2.5 bg-surface-3 border border-white/[0.06] rounded-xl text-white placeholder-zinc-600 text-sm"
+                />
+              </div>
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Voice</label>
+              <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">Video Mode</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setMode('stock')}
+                  className={`p-4 rounded-xl text-left transition-all ${
+                    mode === 'stock'
+                      ? 'bg-accent-purple/10 border border-accent-purple/25'
+                      : 'bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <span className="text-xl mb-1 block">🎞️</span>
+                  <p className="text-sm font-medium text-white">Stock Footage</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">Pexels HD clips + TTS voiceover</p>
+                </button>
+                <button
+                  onClick={() => setMode('avatar')}
+                  className={`p-4 rounded-xl text-left transition-all ${
+                    mode === 'avatar'
+                      ? 'bg-accent-teal/10 border border-accent-teal/25'
+                      : 'bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <span className="text-xl mb-1 block">🧑‍💼</span>
+                  <p className="text-sm font-medium text-white">AI Avatar</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">HeyGen realistic avatar</p>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Voice</label>
               <select
                 value={voice}
                 onChange={(e) => setVoice(e.target.value)}
-                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                className="w-full px-4 py-2.5 bg-surface-3 border border-white/[0.06] rounded-xl text-white text-sm"
               >
                 {VOICES.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
+                  <option key={v.id} value={v.id}>{v.name}</option>
                 ))}
               </select>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="uploadYt"
-              checked={uploadYouTube}
-              onChange={(e) => setUploadYouTube(e.target.checked)}
-              className="rounded border-zinc-700 bg-zinc-800 text-purple-500"
-            />
-            <label htmlFor="uploadYt" className="text-sm text-zinc-400">
-              Auto-upload to YouTube after generation
-            </label>
-          </div>
-
-          <button
-            onClick={handleGenerate}
-            disabled={loading || !topic}
-            className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Generating Video...
-              </span>
-            ) : (
-              'Generate Video'
-            )}
-          </button>
-
-          {mode === 'stock' && (
-            <p className="text-xs text-zinc-500">
-              Generates script → TTS voiceover → downloads stock footage → composes with FFmpeg
-            </p>
-          )}
-          {mode === 'avatar' && (
-            <p className="text-xs text-zinc-500">
-              Generates script → sends to HeyGen AI avatar → polls until video ready
-            </p>
-          )}
-        </div>
-
-        {/* Result */}
-        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6">
-          {error && (
-            <div className="p-4 bg-red-900/30 border border-red-800 rounded-lg text-red-300 text-sm mb-4">
-              {error}
-            </div>
-          )}
-
-          {!result && !loading && !error && (
-            <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
-              <svg className="w-16 h-16 mb-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <p>Enter a topic and click Generate to create a video</p>
-            </div>
-          )}
-
-          {loading && (
-            <div className="flex flex-col items-center justify-center h-64 text-zinc-400">
-              <svg className="animate-spin h-12 w-12 mb-4 text-purple-500" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              <p className="text-sm">Generating video — this may take 1-5 minutes...</p>
-              <p className="text-xs text-zinc-500 mt-1">Script → Voice → Footage → Compose</p>
-            </div>
-          )}
-
-          {result && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-900/50 text-green-400">
-                  {result.status || 'Complete'}
-                </span>
-                {result.duration && (
-                  <span className="text-xs text-zinc-500">{result.duration.toFixed(1)}s</span>
-                )}
+            <label className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/[0.02] border border-white/[0.04] cursor-pointer hover:bg-white/[0.04] transition-colors">
+              <input
+                type="checkbox"
+                checked={uploadYouTube}
+                onChange={(e) => setUploadYouTube(e.target.checked)}
+                className="rounded border-zinc-700 bg-zinc-800 text-accent-purple w-4 h-4"
+              />
+              <div>
+                <p className="text-sm text-white">Auto-upload to YouTube</p>
+                <p className="text-xs text-zinc-500">Publish as YouTube Short after generation</p>
               </div>
+            </label>
 
-              {result.title && (
-                <h3 className="text-lg font-semibold text-white">{result.title}</h3>
+            <button
+              onClick={handleGenerate}
+              disabled={loading || !topic}
+              className="w-full py-3.5 bg-gradient-to-r from-accent-purple to-accent-teal text-white font-semibold rounded-xl hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all btn-press"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Generating Video...
+                </span>
+              ) : (
+                'Generate Video'
               )}
+            </button>
+          </div>
 
-              {result.description && (
-                <p className="text-sm text-zinc-400">{result.description}</p>
-              )}
+          {/* Result */}
+          <div className="glass rounded-2xl p-6">
+            {error && (
+              <div className="p-4 bg-accent-red/5 border border-accent-red/20 rounded-xl text-accent-red text-sm mb-4">
+                {error}
+              </div>
+            )}
 
-              {(result.video_path || result.video_url) && (
-                <div className="p-3 bg-zinc-800 rounded-lg">
-                  <p className="text-xs text-zinc-500 mb-1">Video Location</p>
-                  <p className="text-sm text-zinc-300 font-mono break-all">
-                    {result.video_url || result.video_path}
-                  </p>
+            {!result && !loading && !error && (
+              <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+                <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-accent-purple/10 to-accent-teal/10 flex items-center justify-center mb-4">
+                  <span className="text-3xl">🎬</span>
                 </div>
-              )}
+                <h3 className="text-lg font-semibold text-white mb-1">Create Your First Video</h3>
+                <p className="text-sm text-zinc-500 max-w-sm">
+                  Enter a topic and the AI will write a script, generate voiceover, find matching stock footage, and compose the final video.
+                </p>
+              </div>
+            )}
 
-              {result.uploads && Object.entries(result.uploads).map(([platform, upload]) => (
-                <div key={platform} className="p-3 bg-zinc-800 rounded-lg">
-                  <p className="text-xs text-zinc-500 mb-1">YouTube Upload</p>
-                  {upload.status === 'uploaded' && upload.url ? (
-                    <a href={upload.url} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 text-sm">
-                      {upload.url}
-                    </a>
-                  ) : (
-                    <p className="text-sm text-zinc-400">{upload.status}</p>
+            {loading && (
+              <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
+                <div className="relative">
+                  <div className="w-16 h-16 border-2 border-accent-purple/20 border-t-accent-purple rounded-full animate-spin" />
+                  <span className="absolute inset-0 flex items-center justify-center text-xl">🎬</span>
+                </div>
+                <p className="text-sm text-zinc-400 mt-6">Generating video — this may take 1-5 minutes...</p>
+                <div className="flex gap-2 mt-3">
+                  {['Script', 'Voice', 'Footage', 'Compose'].map((step, i) => (
+                    <span key={step} className="px-2 py-1 text-[10px] rounded-lg bg-white/[0.04] text-zinc-500">
+                      {step}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {result && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-accent-green/10 text-accent-green">
+                    {result.status || 'Complete'}
+                  </span>
+                  {result.duration && (
+                    <span className="text-xs text-zinc-500">{result.duration.toFixed(1)}s</span>
                   )}
                 </div>
-              ))}
 
-              {result.job_id && (
-                <p className="text-xs text-zinc-500">Job ID: {result.job_id}</p>
-              )}
+                {result.title && (
+                  <h3 className="text-lg font-semibold text-white">{result.title}</h3>
+                )}
+
+                {result.description && (
+                  <p className="text-sm text-zinc-400 leading-relaxed">{result.description}</p>
+                )}
+
+                {(result.video_path || result.video_url) && (
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Video Location</p>
+                    <p className="text-sm text-zinc-300 font-mono break-all">
+                      {result.video_url || result.video_path}
+                    </p>
+                  </div>
+                )}
+
+                {result.uploads && Object.entries(result.uploads).map(([platform, upload]) => (
+                  <div key={platform} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">YouTube Upload</p>
+                    {upload.status === 'uploaded' && upload.url ? (
+                      <a href={upload.url} target="_blank" rel="noopener noreferrer" className="text-accent-purple hover:text-accent-teal text-sm transition-colors">
+                        {upload.url} →
+                      </a>
+                    ) : (
+                      <p className="text-sm text-zinc-400">{upload.status}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'gallery' && (
+        <div>
+          {galleryLoading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div key={i} className="glass rounded-2xl aspect-video shimmer" />
+              ))}
+            </div>
+          ) : videos.length === 0 ? (
+            <div className="glass rounded-2xl p-16 flex flex-col items-center justify-center text-center">
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-accent-purple/10 to-accent-teal/10 flex items-center justify-center mb-4">
+                <span className="text-3xl">📼</span>
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-1">No Videos Yet</h3>
+              <p className="text-sm text-zinc-500 max-w-md">
+                Videos you generate will appear here. Switch to the Create tab to make your first video.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {videos.map((video, i) => (
+                <div
+                  key={video.id}
+                  className="glass rounded-2xl overflow-hidden group hover:border-white/10 transition-all animate-slide-up"
+                  style={{ animationDelay: `${i * 50}ms` }}
+                >
+                  {/* Video thumbnail placeholder */}
+                  <div className="aspect-video bg-gradient-to-br from-accent-purple/5 to-accent-teal/5 flex items-center justify-center relative">
+                    <span className="text-4xl opacity-30">🎬</span>
+                    {video.media_url && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <a
+                          href={video.media_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 bg-white/10 backdrop-blur-sm rounded-xl text-white text-sm font-medium hover:bg-white/20 transition-colors"
+                        >
+                          ▶ Watch
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h4 className="text-sm font-medium text-white truncate">{video.title || 'Untitled Video'}</h4>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={`px-2 py-0.5 text-[10px] rounded-full ${
+                        video.status === 'published'
+                          ? 'bg-accent-green/10 text-accent-green'
+                          : 'bg-zinc-800 text-zinc-500'
+                      }`}>
+                        {video.status}
+                      </span>
+                      <span className="text-xs text-zinc-600">
+                        {new Date(video.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

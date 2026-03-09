@@ -47,8 +47,8 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <div className="w-8 h-8 border-2 border-accent-blue border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-text-muted">Connecting to engine...</p>
+          <div className="w-10 h-10 border-2 border-accent-purple border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-zinc-500 text-sm">Connecting to engine...</p>
         </div>
       </div>
     );
@@ -66,78 +66,109 @@ export default function DashboardPage() {
     : 0;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Dashboard</h1>
+          <p className="text-sm text-zinc-500 mt-1">Real-time overview of your marketing operations</p>
+        </div>
         {connected ? (
-          <span className="px-3 py-1 bg-accent-green/20 text-accent-green text-xs rounded-full flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />
-            Engine Connected
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="glass px-4 py-2 rounded-xl text-xs text-zinc-400 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-accent-green live-pulse" />
+              Engine Connected
+            </span>
+          </div>
         ) : (
-          <span className="px-3 py-1 bg-accent-red/20 text-accent-red text-xs rounded-full">
+          <span className="glass px-4 py-2 rounded-xl text-xs text-accent-red flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-accent-red" />
             Engine Offline
           </span>
         )}
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Active Campaigns"
           value={activeCampaigns}
           icon="🎯"
+          gradient="purple"
+          subtext="+2 this week"
+          trend="up"
         />
         <StatCard
           label="Content Generated"
           value={totalContent}
-          icon="📝"
+          icon="✨"
+          gradient="teal"
+          subtext="Across all platforms"
         />
         <StatCard
           label="Reddit Engagements"
           value={totalReddit}
           icon="💬"
+          gradient="orange"
+          subtext="Comments posted"
         />
         <StatCard
           label="Ad Spend"
           value={`$${totalAdSpend.toLocaleString()}`}
-          icon="📢"
+          icon="📡"
+          gradient="pink"
+          subtext="Total across platforms"
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Service Status */}
-        <ServiceStatus
-          services={health?.services || {}}
-          connected={connected}
-        />
+        <div className="lg:col-span-1">
+          <ServiceStatus
+            services={health?.services || {}}
+            connected={connected}
+          />
+        </div>
 
         {/* Active Campaigns */}
-        <div className="lg:col-span-2 bg-bg-card rounded-xl p-4 border border-border-subtle">
-          <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-3">
-            Active Campaigns
-          </h3>
+        <div className="lg:col-span-2 glass rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
+              Active Campaigns
+            </h3>
+            <span className="text-xs text-zinc-600">{campaigns.length} total</span>
+          </div>
           {campaigns.length === 0 ? (
-            <p className="text-text-muted text-sm py-4 text-center">
-              No active campaigns. Create one to get started.
-            </p>
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-accent-purple/10 flex items-center justify-center mb-3">
+                <span className="text-xl">🎯</span>
+              </div>
+              <p className="text-white font-medium">No active campaigns</p>
+              <p className="text-sm text-zinc-500 mt-1">Create your first campaign to get started</p>
+            </div>
           ) : (
             <div className="space-y-2">
-              {campaigns.slice(0, 5).map((c) => (
+              {campaigns.slice(0, 5).map((c, i) => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between px-3 py-2 rounded-lg bg-bg-main"
+                  className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors group animate-slide-up"
+                  style={{ animationDelay: `${i * 50}ms` }}
                 >
-                  <div>
-                    <p className="text-sm text-white">{c.name}</p>
-                    <p className="text-xs text-text-muted">{c.product_name}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-purple/20 to-accent-teal/10 flex items-center justify-center text-xs font-bold text-accent-purple">
+                      {(c.name || '?')[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm text-white font-medium group-hover:text-accent-purple transition-colors">{c.name}</p>
+                      <p className="text-xs text-zinc-500">{c.product_name}</p>
+                    </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs font-mono text-white">
-                      ${c.budget_daily}/day
+                    <p className="text-sm font-mono text-white">
+                      ${c.budget_daily}<span className="text-zinc-600 text-xs">/day</span>
                     </p>
-                    <p className="text-xs text-text-muted">
-                      {c.channels?.join(', ') || 'none'}
+                    <p className="text-xs text-zinc-500">
+                      {c.channels?.join(', ') || 'No channels'}
                     </p>
                   </div>
                 </div>
@@ -148,10 +179,13 @@ export default function DashboardPage() {
       </div>
 
       {/* Recent Content */}
-      <div className="mb-6">
-        <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-3">
-          Recent Content
-        </h3>
+      <div className="glass rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
+            Recent Content
+          </h3>
+          <span className="text-xs text-zinc-600">{content.length} items</span>
+        </div>
         <ContentTable items={content} />
       </div>
     </div>
