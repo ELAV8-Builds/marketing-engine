@@ -177,8 +177,10 @@ CREATE TABLE IF NOT EXISTS daily_performance (
     conversions INTEGER DEFAULT 0,
     spend NUMERIC(12,2) DEFAULT 0,
     revenue NUMERIC(12,2) DEFAULT 0,
+    content_generated INTEGER DEFAULT 0,
     content_published INTEGER DEFAULT 0,
     reddit_comments INTEGER DEFAULT 0,
+    reddit_upvotes INTEGER DEFAULT 0,
     engagement_rate NUMERIC(8,4) DEFAULT 0,
     UNIQUE(campaign_id, date, platform)
 );
@@ -193,7 +195,7 @@ CREATE TABLE IF NOT EXISTS content_calendar (
     content_type TEXT NOT NULL,
     topic TEXT,
     content_id UUID REFERENCES content_items(id) ON DELETE SET NULL,
-    status TEXT NOT NULL DEFAULT 'scheduled',  -- scheduled, generating, published, skipped
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending, completed, failed, skipped
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_calendar_date ON content_calendar(scheduled_date);

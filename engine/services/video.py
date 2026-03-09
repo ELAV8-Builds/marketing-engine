@@ -145,6 +145,7 @@ async def _generate_avatar_video(
         raise ValueError("HeyGen API key not configured")
 
     heygen = HeyGenClient()
+    await heygen.connect()
 
     # Combine all scene narration into one script
     full_narration = " ".join(
@@ -161,9 +162,9 @@ async def _generate_avatar_video(
 
     avatar_id = avatars[0].get("avatar_id", avatars[0].get("id", ""))
 
-    # Create video
+    # Create video (heygen.create_video takes `script` not `script_text`)
     video_id = await heygen.create_video(
-        script_text=full_narration,
+        script=full_narration,
         avatar_id=avatar_id,
         voice_id=voice,
         aspect_ratio="9:16",  # Portrait for Shorts/TikTok
@@ -174,11 +175,14 @@ async def _generate_avatar_video(
 
     logger.info(f"[{job_id}] HeyGen video submitted: {video_id}")
 
-    # Wait for completion
-    result = await heygen.wait_for_video(video_id, timeout=600)
+    # Wait for completion — returns video URL string or None
+    video_url = await heygen.wait_for_video(video_id, timeout=600)
+
+    if not video_url:
+        raise ValueError(f"HeyGen video generation failed or timed out: {video_id}")
 
     return {
-        "video_url": result.get("video_url", ""),
+        "video_url": video_url,
         "video_id": video_id,
         "title": script.get("title", ""),
         "description": script.get("description", ""),
@@ -189,11 +193,50 @@ async def _generate_avatar_video(
 
 
 async def _generate_tts(text: str, voice: str, output_path: str):
-    """Generate TTS audio using edge-tts (free, 300+ voices)."""
-    import edge_tts
+    """Generate TTS audio. Uses ElevenLabs if configured and voice is an ElevenLabs ID, else edge-tts."""
 
-    communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(output_path)
+    # ElevenLabs voice IDs are 20-char alphanumeric strings, edge-tts voices have dashes
+    if config.ELEVENLABS_API_KEY and "-" not in voice and len(voice) >= 15:
+        await _generate_elevenlabs_tts(text, voice, output_path)
+    else:
+        import edge_tts
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(output_path)
+
+
+async def _generate_elevenlabs_tts(text: str, voice_id: str, output_path: str):
+    """Generate TTS audio using ElevenLabs API (premium, natural voices)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+                headers={
+                    "xi-api-key": config.ELEVENLABS_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "text": text,
+                    "model_id": "eleven_multilingual_v2",
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75,
+                        "style": 0.0,
+                        "use_speaker_boost": True,
+                    },
+                },
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            with open(output_path, "wb") as f:
+                f.write(resp.content)
+            logger.info(f"ElevenLabs TTS generated: {output_path}")
+    except Exception as e:
+        logger.error(f"ElevenLabs TTS failed: {e} — falling back to edge-tts")
+        import edge_tts
+        communicate = edge_tts.Communicate(text, "en-US-AriaNeural")
+        await communicate.save(output_path)
 
 
 async def _compose_video(

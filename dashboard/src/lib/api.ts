@@ -163,9 +163,19 @@ export async function generateContent(data: {
   });
 }
 
-export async function fetchRedditEngagements(campaign_id = ''): Promise<{ engagements?: RedditEngagement[] }> {
-  const params = campaign_id ? `?campaign_id=${campaign_id}` : '';
-  return apiFetch(`/api/content${params}`);
+export async function fetchRedditEngagements(campaign_id = '', status = ''): Promise<{ engagements: RedditEngagement[]; count: number }> {
+  const params = new URLSearchParams();
+  if (campaign_id) params.set('campaign_id', campaign_id);
+  if (status) params.set('status', status);
+  return apiFetch(`/api/reddit/engagements?${params}`);
+}
+
+export async function approveEngagement(engagementId: string): Promise<{ status: string; reddit_comment_id?: string }> {
+  return apiFetch(`/api/reddit/engagements/${engagementId}/approve`, { method: 'POST' });
+}
+
+export async function rejectEngagement(engagementId: string): Promise<{ status: string }> {
+  return apiFetch(`/api/reddit/engagements/${engagementId}/reject`, { method: 'POST' });
 }
 
 export async function fetchAdCampaigns(campaign_id = '', platform = ''): Promise<{ ads: AdCampaign[]; count: number }> {
@@ -230,4 +240,45 @@ export async function fetchCalendar(campaign_id = '', start_date = '', end_date 
   if (start_date) params.set('start_date', start_date);
   if (end_date) params.set('end_date', end_date);
   return apiFetch(`/api/calendar?${params}`);
+}
+
+export async function updateCampaign(campaignId: string, data: Partial<Campaign>): Promise<Campaign> {
+  return apiFetch(`/api/campaigns/${campaignId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteCampaign(campaignId: string): Promise<{ deleted: boolean }> {
+  return apiFetch(`/api/campaigns/${campaignId}`, { method: 'DELETE' });
+}
+
+export async function fetchCampaign(campaignId: string): Promise<Campaign> {
+  return apiFetch(`/api/campaigns/${campaignId}`);
+}
+
+export async function syncAdPerformance(): Promise<Record<string, unknown>> {
+  return apiFetch('/api/ads/sync', { method: 'POST' });
+}
+
+export async function deployLandingPage(pageId: string): Promise<{ status: string; url?: string }> {
+  return apiFetch(`/api/landing-pages/${pageId}/deploy`, { method: 'POST' });
+}
+
+export async function createCalendarItem(data: {
+  campaign_id: string;
+  scheduled_date: string;
+  scheduled_time?: string;
+  platform: string;
+  content_type: string;
+  topic?: string;
+}): Promise<Record<string, unknown>> {
+  return apiFetch('/api/calendar', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function getEngineUrl(): string {
+  return ENGINE_URL;
 }

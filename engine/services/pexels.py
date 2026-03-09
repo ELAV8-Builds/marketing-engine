@@ -10,6 +10,23 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.pexels.com"
 
 
+class PexelsClient:
+    """Wrapper class for Pexels API operations."""
+
+    async def search_videos(self, query: str, **kwargs) -> list[dict]:
+        return await search_videos(query, **kwargs)
+
+    async def search_images(self, query: str, **kwargs) -> list[dict]:
+        return await search_images(query, **kwargs)
+
+    async def download_video(self, query: str, output_path: str) -> bool:
+        """Search for a video by query, then download the first result."""
+        videos = await search_videos(query, per_page=3)
+        if not videos:
+            return False
+        return await download_video(videos[0]["url"], output_path)
+
+
 async def search_videos(
     query: str,
     per_page: int = 5,

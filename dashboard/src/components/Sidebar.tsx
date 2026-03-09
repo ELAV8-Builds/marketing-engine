@@ -7,6 +7,7 @@ const nav = [
   { href: '/', label: 'Dashboard', icon: '📊' },
   { href: '/campaigns', label: 'Campaigns', icon: '🎯' },
   { href: '/content', label: 'Content', icon: '📝' },
+  { href: '/video', label: 'Video', icon: '🎬' },
   { href: '/reddit', label: 'Reddit', icon: '💬' },
   { href: '/ads', label: 'Ads', icon: '📢' },
   { href: '/analytics', label: 'Analytics', icon: '📈' },

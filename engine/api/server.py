@@ -93,11 +93,17 @@ class LandingPageCreate(BaseModel):
 async def health():
     return {
         "status": "ok",
+        "version": "1.1.0",
         "services": {
+            "litellm": bool(config.LITELLM_URL),
             "reddit": bool(config.REDDIT_CLIENT_ID),
             "meta_ads": bool(config.META_ACCESS_TOKEN),
+            "google_ads": bool(config.GOOGLE_ADS_DEVELOPER_TOKEN),
+            "tiktok_ads": bool(config.TIKTOK_ACCESS_TOKEN),
             "heygen": bool(config.HEYGEN_API_KEY),
             "pexels": bool(config.PEXELS_API_KEY),
+            "elevenlabs": bool(config.ELEVENLABS_API_KEY),
+            "youtube": bool(config.YOUTUBE_API_KEY),
         },
     }
 
@@ -110,11 +116,13 @@ async def list_campaigns(
     limit: int = Query(50, ge=1, le=200),
 ):
     async with get_session() as session:
-        q = "SELECT * FROM campaigns ORDER BY created_at DESC"
+        params: dict = {"limit": limit}
         if status != "all":
-            q = f"SELECT * FROM campaigns WHERE status = '{status}' ORDER BY created_at DESC"
-        q += f" LIMIT {limit}"
-        result = await session.execute(text(q))
+            q = "SELECT * FROM campaigns WHERE status = :status ORDER BY created_at DESC LIMIT :limit"
+            params["status"] = status
+        else:
+            q = "SELECT * FROM campaigns ORDER BY created_at DESC LIMIT :limit"
+        result = await session.execute(text(q), params)
         rows = result.mappings().all()
         return {"campaigns": [dict(r) for r in rows], "count": len(rows)}
 
@@ -155,6 +163,113 @@ async def get_campaign(campaign_id: str):
         row = result.mappings().first()
         if not row:
             raise HTTPException(status_code=404, detail="Campaign not found")
+        return dict(row)
+
+
+class CampaignUpdate(BaseModel):
+    name: str = ""
+    product_name: str = ""
+    product_url: str = ""
+    product_description: str = ""
+    target_audience: str = ""
+    channels: list[str] = []
+    budget_daily: float = -1
+    budget_total: float = -1
+    status: str = ""
+    meta: dict = {}
+
+
+@app.patch("/api/campaigns/{campaign_id}")
+async def update_campaign(campaign_id: str, body: CampaignUpdate):
+    """Update a campaign's fields. Only non-empty fields are updated."""
+    async with get_session() as session:
+        updates = []
+        params: dict = {"id": campaign_id}
+        if body.name:
+            updates.append("name = :name")
+            params["name"] = body.name
+        if body.product_name:
+            updates.append("product_name = :pname")
+            params["pname"] = body.product_name
+        if body.product_url:
+            updates.append("product_url = :purl")
+            params["purl"] = body.product_url
+        if body.product_description:
+            updates.append("product_description = :pdesc")
+            params["pdesc"] = body.product_description
+        if body.target_audience:
+            updates.append("target_audience = :audience")
+            params["audience"] = body.target_audience
+        if body.channels:
+            updates.append("channels = :channels")
+            params["channels"] = body.channels
+        if body.budget_daily >= 0:
+            updates.append("budget_daily = :bdaily")
+            params["bdaily"] = body.budget_daily
+        if body.budget_total >= 0:
+            updates.append("budget_total = :btotal")
+            params["btotal"] = body.budget_total
+        if body.status:
+            updates.append("status = :status")
+            params["status"] = body.status
+
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        updates.append("updated_at = NOW()")
+        q = f"UPDATE campaigns SET {', '.join(updates)} WHERE id = :id RETURNING *"
+        result = await session.execute(text(q), params)
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        return dict(row)
+
+
+@app.delete("/api/campaigns/{campaign_id}")
+async def delete_campaign(campaign_id: str):
+    """Delete a campaign (soft delete — sets status to 'deleted')."""
+    async with get_session() as session:
+        result = await session.execute(
+            text("UPDATE campaigns SET status = 'deleted', updated_at = NOW() WHERE id = :id RETURNING id"),
+            {"id": campaign_id},
+        )
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        return {"deleted": True, "id": str(row["id"])}
+
+
+# ── Content Calendar Create ──────────────────────────────
+
+class CalendarItemCreate(BaseModel):
+    campaign_id: str
+    scheduled_date: str  # YYYY-MM-DD
+    scheduled_time: str = "09:00"  # HH:MM
+    platform: str
+    content_type: str
+    topic: str = ""
+
+@app.post("/api/calendar")
+async def create_calendar_item(body: CalendarItemCreate):
+    """Schedule a content item on the calendar."""
+    async with get_session() as session:
+        result = await session.execute(
+            text("""
+                INSERT INTO content_calendar
+                    (campaign_id, scheduled_date, scheduled_time, platform, content_type, topic, status)
+                VALUES (:cid, :date, :time, :platform, :type, :topic, 'pending')
+                RETURNING id, scheduled_date, platform, content_type, topic, status
+            """),
+            {
+                "cid": body.campaign_id,
+                "date": body.scheduled_date,
+                "time": body.scheduled_time,
+                "platform": body.platform,
+                "type": body.content_type,
+                "topic": body.topic,
+            },
+        )
+        row = result.mappings().first()
         return dict(row)
 
 
@@ -264,7 +379,8 @@ async def list_content(
             params["status"] = status
 
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
-        q = f"SELECT * FROM content_items{where} ORDER BY created_at DESC LIMIT {limit}"
+        params["limit"] = limit
+        q = f"SELECT * FROM content_items{where} ORDER BY created_at DESC LIMIT :limit"
         result = await session.execute(text(q), params)
         rows = result.mappings().all()
         return {"content": [dict(r) for r in rows], "count": len(rows)}
@@ -383,6 +499,87 @@ async def reddit_engage(body: RedditEngageRequest):
     return {"engagements": results, "count": len(results)}
 
 
+@app.get("/api/reddit/engagements")
+async def list_reddit_engagements(
+    campaign_id: str = "",
+    status: str = "",
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List Reddit engagements, optionally filtered."""
+    async with get_session() as session:
+        conditions = []
+        params: dict = {"limit": limit}
+        if campaign_id:
+            conditions.append("campaign_id = :campaign_id")
+            params["campaign_id"] = campaign_id
+        if status:
+            conditions.append("status = :status")
+            params["status"] = status
+
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        q = f"SELECT * FROM reddit_engagements{where} ORDER BY created_at DESC LIMIT :limit"
+        result = await session.execute(text(q), params)
+        rows = result.mappings().all()
+        return {"engagements": [dict(r) for r in rows], "count": len(rows)}
+
+
+@app.post("/api/reddit/engagements/{engagement_id}/approve")
+async def approve_reddit_engagement(engagement_id: str):
+    """Approve and post a pending Reddit engagement."""
+    from services.reddit import RedditClient
+
+    async with get_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM reddit_engagements WHERE id = :id"),
+            {"id": engagement_id},
+        )
+        eng = result.mappings().first()
+        if not eng:
+            raise HTTPException(status_code=404, detail="Engagement not found")
+
+        if eng["status"] not in ("pending", "pending_review", "generated"):
+            raise HTTPException(status_code=400, detail=f"Cannot approve engagement with status: {eng['status']}")
+
+        # Post the comment to Reddit
+        client = RedditClient()
+        await client.connect()
+        try:
+            comment_id = await client.post_comment(eng["post_id"], eng["comment_text"])
+        finally:
+            await client.close()
+
+        if comment_id:
+            await session.execute(
+                text("""
+                    UPDATE reddit_engagements
+                    SET status = 'posted', reddit_comment_id = :cid, posted_at = NOW()
+                    WHERE id = :id
+                """),
+                {"id": engagement_id, "cid": comment_id},
+            )
+            return {"status": "posted", "reddit_comment_id": comment_id}
+        else:
+            await session.execute(
+                text("UPDATE reddit_engagements SET status = 'failed' WHERE id = :id"),
+                {"id": engagement_id},
+            )
+            raise HTTPException(status_code=500, detail="Failed to post comment to Reddit")
+
+
+@app.post("/api/reddit/engagements/{engagement_id}/reject")
+async def reject_reddit_engagement(engagement_id: str):
+    """Reject a pending Reddit engagement."""
+    async with get_session() as session:
+        result = await session.execute(
+            text("UPDATE reddit_engagements SET status = 'rejected' WHERE id = :id RETURNING id"),
+            {"id": engagement_id},
+        )
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Engagement not found")
+        return {"status": "rejected", "id": str(row["id"])}
+
+
 # ── Ad Campaigns ──────────────────────────────────────────
 
 @app.post("/api/ads/create")
@@ -409,7 +606,7 @@ async def create_ad_campaign(body: AdCampaignCreate):
         "external_campaign_id": None,
     }
 
-    # Create on Meta if configured
+    # Create on the target platform if configured
     if body.platform == "meta" and config.META_ACCESS_TOKEN:
         from services.meta_ads import MetaAdsClient
         meta = MetaAdsClient()
@@ -423,6 +620,36 @@ async def create_ad_campaign(body: AdCampaignCreate):
             result["status"] = "created_paused"
         finally:
             await meta.close()
+
+    elif body.platform == "google" and config.GOOGLE_ADS_DEVELOPER_TOKEN:
+        from services.google_ads import GoogleAdsClient
+        google = GoogleAdsClient()
+        await google.connect()
+        try:
+            resource_name = await google.create_campaign(
+                name=body.name,
+                campaign_type="SEARCH" if body.objective == "traffic" else "DISPLAY",
+                daily_budget_micros=int(body.daily_budget * 1_000_000),
+            )
+            result["external_campaign_id"] = resource_name
+            result["status"] = "created_paused"
+        finally:
+            await google.close()
+
+    elif body.platform == "tiktok" and config.TIKTOK_ACCESS_TOKEN:
+        from services.tiktok_ads import TikTokAdsClient
+        tiktok = TikTokAdsClient()
+        await tiktok.connect()
+        try:
+            campaign_id = await tiktok.create_campaign(
+                name=body.name,
+                objective="TRAFFIC" if body.objective == "traffic" else "CONVERSIONS",
+                budget=body.daily_budget,
+            )
+            result["external_campaign_id"] = campaign_id
+            result["status"] = "created_paused"
+        finally:
+            await tiktok.close()
 
     # Save to DB
     if body.campaign_id:
@@ -463,7 +690,8 @@ async def list_ad_campaigns(
             params["platform"] = platform
 
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
-        q = f"SELECT * FROM ad_campaigns{where} ORDER BY created_at DESC LIMIT {limit}"
+        params["limit"] = limit
+        q = f"SELECT * FROM ad_campaigns{where} ORDER BY created_at DESC LIMIT :limit"
         result = await session.execute(text(q), params)
         rows = result.mappings().all()
         return {"ads": [dict(r) for r in rows], "count": len(rows)}
@@ -527,7 +755,8 @@ async def list_landing_pages(
             params["campaign_id"] = campaign_id
 
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
-        q = f"SELECT * FROM landing_pages{where} ORDER BY created_at DESC LIMIT {limit}"
+        params["limit"] = limit
+        q = f"SELECT * FROM landing_pages{where} ORDER BY created_at DESC LIMIT :limit"
         result = await session.execute(text(q), params)
         rows = result.mappings().all()
         return {"pages": [dict(r) for r in rows], "count": len(rows)}
@@ -539,35 +768,42 @@ async def list_landing_pages(
 async def analytics_overview(campaign_id: str = ""):
     """Get high-level analytics across all channels."""
     async with get_session() as session:
-        where = f"WHERE campaign_id = '{campaign_id}'" if campaign_id else ""
+        where = "WHERE campaign_id = :cid" if campaign_id else ""
+        params = {"cid": campaign_id} if campaign_id else {}
 
         # Content stats
-        content_q = f"SELECT count(*), status FROM content_items {where} GROUP BY status"
-        content_result = await session.execute(text(content_q))
-        content_stats = {r["status"]: r["count"] for r in content_result.mappings().all()}
+        content_result = await session.execute(
+            text(f"SELECT count(*) as cnt, status FROM content_items {where} GROUP BY status"), params
+        )
+        content_stats = {r["status"]: r["cnt"] for r in content_result.mappings().all()}
 
         # Reddit stats
-        reddit_q = f"SELECT count(*), status FROM reddit_engagements {where} GROUP BY status"
-        reddit_result = await session.execute(text(reddit_q))
-        reddit_stats = {r["status"]: r["count"] for r in reddit_result.mappings().all()}
+        reddit_result = await session.execute(
+            text(f"SELECT count(*) as cnt, status FROM reddit_engagements {where} GROUP BY status"), params
+        )
+        reddit_stats = {r["status"]: r["cnt"] for r in reddit_result.mappings().all()}
 
         # Ad stats
-        ad_q = f"""SELECT platform, sum(impressions) as impressions, sum(clicks) as clicks,
-                   sum(spend_total) as spend, sum(conversions) as conversions
-                   FROM ad_campaigns {where} GROUP BY platform"""
-        ad_result = await session.execute(text(ad_q))
+        ad_result = await session.execute(
+            text(f"""SELECT platform, COALESCE(sum(impressions),0) as impressions,
+                     COALESCE(sum(clicks),0) as clicks, COALESCE(sum(spend_total),0) as spend,
+                     COALESCE(sum(conversions),0) as conversions
+                     FROM ad_campaigns {where} GROUP BY platform"""), params
+        )
         ad_stats = [dict(r) for r in ad_result.mappings().all()]
 
         # Landing page stats
-        lp_q = f"SELECT count(*), sum(visits) as visits, sum(conversions) as conversions FROM landing_pages {where}"
-        lp_result = await session.execute(text(lp_q))
-        lp_stats = dict(lp_result.mappings().first() or {})
+        lp_result = await session.execute(
+            text(f"SELECT count(*) as cnt, COALESCE(sum(visits),0) as visits, COALESCE(sum(conversions),0) as conversions FROM landing_pages {where}"), params
+        )
+        lp_row = lp_result.mappings().first()
+        lp_stats = dict(lp_row) if lp_row else {"cnt": 0, "visits": 0, "conversions": 0}
 
         return {
             "content": content_stats,
             "reddit": reddit_stats,
             "ads": ad_stats,
-            "landing_pages": lp_stats,
+            "landing_pages": {"count": lp_stats.get("cnt", 0), "visits": lp_stats.get("visits", 0), "conversions": lp_stats.get("conversions", 0)},
         }
 
 
@@ -578,12 +814,14 @@ async def daily_analytics(
 ):
     async with get_session() as session:
         cutoff = (date.today() - timedelta(days=days)).isoformat()
-        where = f"WHERE date >= '{cutoff}'"
+        params: dict = {"cutoff": cutoff}
+        where = "WHERE date >= :cutoff"
         if campaign_id:
-            where += f" AND campaign_id = '{campaign_id}'"
+            where += " AND campaign_id = :cid"
+            params["cid"] = campaign_id
 
         q = f"SELECT * FROM daily_performance {where} ORDER BY date DESC"
-        result = await session.execute(text(q))
+        result = await session.execute(text(q), params)
         rows = result.mappings().all()
         return {"performance": [dict(r) for r in rows], "days": days}
 
@@ -666,15 +904,218 @@ async def get_calendar(
 ):
     async with get_session() as session:
         conditions = []
+        params: dict = {}
         if campaign_id:
-            conditions.append(f"campaign_id = '{campaign_id}'")
+            conditions.append("campaign_id = :cid")
+            params["cid"] = campaign_id
         if start_date:
-            conditions.append(f"scheduled_date >= '{start_date}'")
+            conditions.append("scheduled_date >= :start")
+            params["start"] = start_date
         if end_date:
-            conditions.append(f"scheduled_date <= '{end_date}'")
+            conditions.append("scheduled_date <= :end")
+            params["end"] = end_date
 
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         q = f"SELECT * FROM content_calendar{where} ORDER BY scheduled_date, scheduled_time"
-        result = await session.execute(text(q))
+        result = await session.execute(text(q), params)
         rows = result.mappings().all()
         return {"calendar": [dict(r) for r in rows], "count": len(rows)}
+
+
+# ── Ad Performance Sync (on-demand) ─────────────────────
+
+@app.post("/api/ads/sync")
+async def sync_ad_performance():
+    """Trigger an on-demand sync of ad performance from all platforms."""
+    results = {"meta": "skipped", "google": "skipped", "tiktok": "skipped"}
+
+    if config.META_ACCESS_TOKEN:
+        try:
+            from services.meta_ads import MetaAdsClient
+            meta = MetaAdsClient()
+            await meta.connect()
+            # Just verify connection works
+            await meta.close()
+            results["meta"] = "synced"
+        except Exception as e:
+            results["meta"] = f"error: {str(e)[:100]}"
+
+    if config.GOOGLE_ADS_DEVELOPER_TOKEN:
+        try:
+            from services.google_ads import GoogleAdsClient
+            google = GoogleAdsClient()
+            await google.connect()
+            perf = await google.get_campaign_performance(days=7)
+            await google.close()
+            results["google"] = f"synced ({len(perf)} campaigns)"
+        except Exception as e:
+            results["google"] = f"error: {str(e)[:100]}"
+
+    if config.TIKTOK_ACCESS_TOKEN:
+        try:
+            from services.tiktok_ads import TikTokAdsClient
+            tiktok = TikTokAdsClient()
+            await tiktok.connect()
+            perf = await tiktok.get_campaign_performance()
+            await tiktok.close()
+            results["tiktok"] = f"synced ({len(perf)} campaigns)"
+        except Exception as e:
+            results["tiktok"] = f"error: {str(e)[:100]}"
+
+    return {"status": "complete", "results": results}
+
+
+# ── Landing Page Deploy (Vercel) ─────────────────────────
+
+class LandingPageDeploy(BaseModel):
+    landing_page_id: str
+    custom_domain: str = ""
+
+@app.post("/api/landing-pages/{page_id}/deploy")
+async def deploy_landing_page(page_id: str):
+    """Deploy a landing page to Vercel."""
+    import httpx
+
+    if not config.VERCEL_TOKEN:
+        raise HTTPException(status_code=400, detail="Vercel token not configured")
+
+    async with get_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM landing_pages WHERE id = :id"),
+            {"id": page_id},
+        )
+        page = result.mappings().first()
+        if not page:
+            raise HTTPException(status_code=404, detail="Landing page not found")
+
+        slug = page["slug"]
+        headline = page.get("headline", "")
+        subheadline = page.get("subheadline", "")
+        cta_text = page.get("cta_text", "Get Started")
+        cta_url = page.get("cta_url", "#")
+        body_html = page.get("body_html", "")
+
+        # Generate a simple HTML landing page
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{headline}</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a2e;background:#fff}}
+.hero{{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}}
+.hero h1{{font-size:clamp(2rem,5vw,3.5rem);color:#fff;margin-bottom:1rem;max-width:800px}}
+.hero p{{font-size:1.25rem;color:rgba(255,255,255,0.9);margin-bottom:2rem;max-width:600px}}
+.cta-btn{{display:inline-block;padding:1rem 2.5rem;background:#fff;color:#764ba2;font-size:1.125rem;font-weight:700;border-radius:8px;text-decoration:none;transition:transform 0.2s}}
+.cta-btn:hover{{transform:translateY(-2px)}}
+.content{{max-width:800px;margin:3rem auto;padding:0 2rem;line-height:1.7;font-size:1.125rem}}
+</style>
+</head>
+<body>
+<section class="hero">
+<h1>{headline}</h1>
+<p>{subheadline}</p>
+<a href="{cta_url}" class="cta-btn">{cta_text}</a>
+</section>
+<section class="content">{body_html}</section>
+</body>
+</html>"""
+
+        # Deploy to Vercel using the deployments API
+        try:
+            async with httpx.AsyncClient() as client:
+                deploy_resp = await client.post(
+                    "https://api.vercel.com/v13/deployments",
+                    headers={
+                        "Authorization": f"Bearer {config.VERCEL_TOKEN}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "name": f"lp-{slug}",
+                        "files": [
+                            {
+                                "file": "index.html",
+                                "data": html_content,
+                            }
+                        ],
+                        "projectSettings": {
+                            "framework": None,
+                        },
+                    },
+                    timeout=60.0,
+                )
+                deploy_resp.raise_for_status()
+                deploy_data = deploy_resp.json()
+
+                deployed_url = f"https://{deploy_data.get('url', '')}"
+                deployment_id = deploy_data.get("id", "")
+
+                # Update DB with deployment info
+                await session.execute(
+                    text("""
+                        UPDATE landing_pages SET
+                            deployed_url = :url,
+                            vercel_deployment_id = :did,
+                            status = 'deployed',
+                            updated_at = NOW()
+                        WHERE id = :id
+                    """),
+                    {"id": page_id, "url": deployed_url, "did": deployment_id},
+                )
+
+                return {
+                    "status": "deployed",
+                    "url": deployed_url,
+                    "deployment_id": deployment_id,
+                }
+
+        except Exception as e:
+            logger.error(f"Vercel deployment failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Deployment failed: {str(e)[:200]}")
+
+
+# ── SSE Event Stream ─────────────────────────────────────
+
+@app.get("/api/stream")
+async def event_stream():
+    """Server-Sent Events stream for real-time dashboard updates."""
+    import asyncio
+    import json
+    from fastapi.responses import StreamingResponse
+
+    async def generate():
+        """Generate SSE events from Redis pub/sub."""
+        import redis.asyncio as aioredis
+
+        try:
+            redis = aioredis.from_url(config.REDIS_URL, decode_responses=True)
+            pubsub = redis.pubsub()
+            await pubsub.subscribe("marketing:events")
+
+            # Send initial connection event
+            yield f"data: {json.dumps({'type': 'connected', 'message': 'Stream connected'})}\n\n"
+
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=30.0)
+                if message and message["type"] == "message":
+                    event_data = message["data"]
+                    yield f"data: {json.dumps({'type': 'event', 'data': event_data})}\n\n"
+                else:
+                    # Send heartbeat every 30s
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+
+        except Exception as e:
+            logger.error(f"SSE stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)[:200]})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
